@@ -73,13 +73,17 @@ function withRelistingSample(repository) {
 }
 
 function demoRepository(scenario, startItemId, relistingPractice = false) {
-  let data = { listings: structuredClone(seedListings), handovers: [], messages: [], replies: [], profile: { college: '' } };
+  let data = { listings: structuredClone(seedListings), handovers: [], messages: [], replies: [], profile: { college: '', pickup_area: '' } };
   if (!scenario) {
     try { data = { ...data, ...JSON.parse(localStorage.getItem(storageKey)) }; } catch { /* Browser storage is optional. */ }
+    data.profile = { college: '', pickup_area: '', ...data.profile };
     // Saved demo data from an earlier version may lack newer sample listings; add them back.
     const known = new Set(data.listings.map(row => row.id));
     data.listings.push(...structuredClone(seedListings.filter(row => !known.has(row.id))));
-    for (const row of data.listings) if (row.condition) row.condition = normalizeCondition(row.condition);
+    for (const row of data.listings) {
+      if (row.condition) row.condition = normalizeCondition(row.condition);
+      if (row.simulated && !row.pickup_area) row.pickup_area = seedListings.find(seed => seed.id === row.id)?.pickup_area ?? '';
+    }
   }
 
   function persist() {
@@ -112,7 +116,7 @@ function demoRepository(scenario, startItemId, relistingPractice = false) {
     async read() { return structuredClone(data); },
     async setCollege(college) {
       if (college && !colleges.includes(college)) throw new Error('invalid_college');
-      data.profile = { college: college || '' };
+      data.profile = { ...data.profile, college: college || '' };
       persist();
     },
     async sendReply(id, offer) {
@@ -203,6 +207,8 @@ function demoRepository(scenario, startItemId, relistingPractice = false) {
       const row = { id: id ?? crypto.randomUUID(), owner_id: guest, display_name: 'Campus member', status: 'available',
         art: payload.category === 'study' ? 'books' : payload.category === 'electronics' ? 'keyboard' : 'box', ...payload,
         college: payload.audience === 'college' ? data.profile.college : null };
+      // R-U1: remember the pickup area so the next offer starts with it filled in.
+      if (row.kind === 'offer' && row.pickup_area) data.profile = { ...data.profile, pickup_area: row.pickup_area };
       if (item) Object.assign(item, row);
       else data.listings.unshift(row);
       persist();

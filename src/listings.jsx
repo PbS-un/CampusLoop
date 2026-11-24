@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { artSVG } from './art.js';
-import { audiences, campusDate, categories, categoriesFor, colleges, conditions, emptySlot, normalizeCondition, slotEnded, validSlot } from './model.js';
+import { audiences, campusDate, categories, categoriesFor, colleges, conditions, emptySlot, handoverPlaceLabel, normalizeCondition, places, slotEnded, validSlot } from './model.js';
 
 const slotError = slot => !validSlot(slot) ? (slot.start && slot.end && slot.end <= slot.start ? 'pickupOrder' : 'badSlot')
   : slotEnded(slot) ? 'futureTime' : null;
@@ -138,8 +138,9 @@ export function ListingDetails({ item, t, locale }) {
     <div><dt>{t('listingKind')}</dt><dd>{t(offerLabel(item))}</dd></div>
     <div><dt>{t('category')}</dt><dd>{categoriesFor(item).map(category => t(category)).join(' · ')}</dd></div>
     <div><dt>{t('transferType')}</dt><dd>{price(item, t)}</dd></div>
-    <div><dt>{t('description')}</dt><dd>{item.description}</dd></div>
+    <div><dt>{t('description')}</dt><dd>{item.description || t('descriptionNone')}</dd></div>
     {isOffer && <>
+      {item.pickup_area && <div><dt>{t('pickupArea')}</dt><dd>{handoverPlaceLabel(item.pickup_area, t)}</dd></div>}
       <ConditionFacts item={item} t={t} />
       <div><dt>{t('pickupAvailability')}</dt><dd>{item.pickup_slots.length ? <ul className="slot-summary">
         {item.pickup_slots.map((slot, index) => <li key={index}><DateLabel value={slot.date} locale={locale} /> · {slot.start}–{slot.end}</li>)}
@@ -150,13 +151,47 @@ export function ListingDetails({ item, t, locale }) {
   </dl>;
 }
 
+// Photos are resized before saving so phone pictures fit in browser storage.
+async function resizePhoto(file, maxSide = 900) {
+  const url = URL.createObjectURL(file);
+  try {
+    const image = await new Promise((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = reject;
+      element.src = url;
+    });
+    const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.8);
+  } finally { URL.revokeObjectURL(url); }
+}
+
+function PickupAreaField({ value, onChange, t, error }) {
+  const preset = places.includes(value) ? value : '';
+  return <div className="place-field">
+    <Field label={t('pickupArea')} error={error}>
+      <input name="pickupArea" maxLength={100} value={preset ? t(preset) : value} placeholder={t('placeExample')}
+        aria-required="true" aria-invalid={!!error || undefined} aria-describedby="pickup-area-hint" onChange={event => onChange(event.target.value)} />
+    </Field>
+    <div className="place-suggestions" role="group" aria-label={t('suggestedPlaces')}>
+      {places.map(place => <button type="button" key={place} aria-pressed={preset === place} onClick={() => onChange(place)}>{t(place)}</button>)}
+    </div>
+    <small id="pickup-area-hint">{t('pickupAreaHint')}</small>
+  </div>;
+}
+
 export function ListingForm({ form, setForm, t, onReview, college = '', onCollegeChange }) {
   const [submitted, setSubmitted] = useState(false);
-  const [photoError, setPhotoError] = useState(false);
+  const [photoError, setPhotoError] = useState('');
   const [readingPhoto, setReadingPhoto] = useState(false);
   const dates = useRef(null);
   const offer = form.kind === 'offer';
   const selectedCategories = categoriesFor(form);
+  const pickupArea = (form.pickup_area ?? '').trim();
   const set = (name, value) => setForm(current => ({ ...current, [name]: value }));
   const setSlot = (index, field, value) => setForm(current => ({
     ...current, pickup_slots: current.pickup_slots.map((slot, position) => position === index ? { ...slot, [field]: value } : slot),
@@ -165,61 +200,63 @@ export function ListingForm({ form, setForm, t, onReview, college = '', onColleg
   async function loadPhoto(event) {
     const file = event.target.files[0];
     if (!file) return;
-    setPhotoError(false);
+    setPhotoError('');
     setReadingPhoto(true);
-    try {
-      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 512 * 1024) throw new Error();
-      const reader = new FileReader();
-      const data = await new Promise((resolve, reject) => {
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-      set('photo', data);
-    } catch { setPhotoError(true); }
+    try { set('photo', await resizePhoto(file)); }
+    catch { setPhotoError('photoUnreadable'); }
     finally { setReadingPhoto(false); }
+  }
+
+  // Report 3, R-U1: an offer needs only a photo, category, condition and pickup area. Everything else is optional.
+  function firstProblem() {
+    if (offer) {
+      if (!form.photo) return 'photo';
+      if (!selectedCategories.length) return 'category';
+      if (!conditions.includes(normalizeCondition(form.condition))) return 'condition';
+      if (!pickupArea || pickupArea.length > 100) return 'pickupArea';
+      if (form.condition === 'hasDefects' && !form.defects.trim()) return 'defects';
+      if (form.mode === 'sell' && !validPrice(form.price)) return 'price';
+      if (form.formMode === 'slots' && form.pickup_slots.some(slotError)) return 'slots';
+    } else {
+      if (!form.title.trim()) return 'title';
+      if (!form.description.trim()) return 'description';
+      if (!selectedCategories.length) return 'category';
+    }
+    if (form.audience === 'college' && !college) return 'college';
+    return null;
   }
 
   function submit(event) {
     event.preventDefault();
-    if (!form.title.trim() || !form.description.trim()) {
+    const problem = firstProblem();
+    if (problem) {
       setSubmitted(true);
-      event.currentTarget.querySelector(!form.title.trim() ? '[name="title"]' : '[name="description"]').focus();
-      return;
-    }
-    if (!selectedCategories.length) {
-      setSubmitted(true);
-      event.currentTarget.querySelector('[name="category"]').focus();
-      return;
-    }
-    if (offer && !conditions.includes(normalizeCondition(form.condition))) {
-      setSubmitted(true);
-      event.currentTarget.querySelector('[name="condition"]').focus();
-      return;
-    }
-    if (offer && form.condition === 'hasDefects' && !form.defects.trim()) {
-      setSubmitted(true);
-      event.currentTarget.querySelector('[name="defects"]').focus();
-      return;
-    }
-    if (offer && form.mode === 'sell' && !validPrice(form.price)) {
-      setSubmitted(true);
-      event.currentTarget.querySelector('[name="price"]').focus();
-      return;
-    }
-    if (offer && form.formMode === 'slots' && form.pickup_slots.some(slotError)) {
-      setSubmitted(true);
-      dates.current.querySelectorAll('fieldset')[form.pickup_slots.findIndex(slotError)].querySelector('input').focus();
-      return;
-    }
-    if (form.audience === 'college' && !college) {
-      setSubmitted(true);
-      event.currentTarget.querySelector('[name="college"]').focus();
+      if (problem === 'slots') dates.current.querySelectorAll('fieldset')[form.pickup_slots.findIndex(slotError)].querySelector('input').focus();
+      else event.currentTarget.querySelector(`[name="${problem}"]`)?.focus();
       return;
     }
     const pickup_slots = form.formMode === 'slots' ? form.pickup_slots : [];
-    onReview({ ...form, pickup_slots });
+    const title = form.title.trim() || t(selectedCategories[0]);
+    onReview({ ...form, title, pickup_slots });
   }
+
+  const titleField = <div className="field-with-hint">
+    <Field label={t(offer ? 'titleOptional' : 'listingTitle')} error={!offer && submitted && !form.title.trim() ? t('required') : null}>
+      <input name="title" maxLength={100} value={form.title} onChange={event => set('title', event.target.value)} aria-describedby={offer ? 'title-hint' : undefined} />
+    </Field>
+    {offer && <small id="title-hint">{t('titleFallbackHint')}</small>}
+  </div>;
+  const descriptionField = <Field label={t(offer ? 'descriptionOptional' : 'description')} error={!offer && submitted && !form.description.trim() ? t('required') : null}>
+    <textarea name="description" maxLength={1500} value={form.description} onChange={event => set('description', event.target.value)} />
+  </Field>;
+  const categoryField = <CategoryPicker label={t('categoryMultiple')} selected={selectedCategories} t={t} onChange={value => set('categories', value)}
+    error={submitted && !selectedCategories.length ? t('categoryRequired') : null} />;
+  const transferField = <>
+    <Field label={t('transferType')}><select value={form.mode} onChange={event => set('mode', event.target.value)}>
+      <option value="free">{t('free')}</option><option value="sell">{t(offer ? 'forSale' : 'paidRequest')}</option>
+    </select></Field>
+    {offer && form.mode === 'sell' && <Field label={t('price')} error={submitted && !validPrice(form.price) ? t('priceError') : null}><input name="price" type="number" min="0.01" max="999999.99" step="0.01" inputMode="decimal" value={form.price ?? ''} onChange={event => set('price', event.target.value)} /></Field>}
+  </>;
 
   return <form className="stack" noValidate onSubmit={submit}>
     <Heading>{t(form.id ? 'editListing' : 'post')}</Heading>
@@ -239,63 +276,64 @@ export function ListingForm({ form, setForm, t, onReview, college = '', onColleg
           ))}
         </div>
       </fieldset>
-      <Field label={t('listingTitle')} error={submitted && !form.title.trim() ? t('required') : null}>
-        <input name="title" maxLength={100} value={form.title} onChange={event => set('title', event.target.value)} required />
-      </Field>
-      <Field label={t('description')} error={submitted && !form.description.trim() ? t('required') : null}>
-        <textarea name="description" maxLength={1500} value={form.description} onChange={event => set('description', event.target.value)} required />
-      </Field>
-      <CategoryPicker label={t('categoryMultiple')} selected={selectedCategories} t={t} onChange={value => set('categories', value)}
-        error={submitted && !selectedCategories.length ? t('categoryRequired') : null} />
-      <Field label={t('transferType')}><select value={form.mode} onChange={event => set('mode', event.target.value)}>
-        <option value="free">{t('free')}</option><option value="sell">{t(offer ? 'forSale' : 'paidRequest')}</option>
-      </select></Field>
-      {offer && <>
+      {!offer && <>{titleField}{descriptionField}{categoryField}{transferField}</>}
+      {offer && <section className="stack" aria-labelledby="required-details">
+        <h2 id="required-details" className="small-heading">{t('requiredDetails')}</h2>
+        <div className="field-with-hint">
+          <Field label={t('photo')} error={submitted && !form.photo && !photoError ? t('photoRequired') : photoError ? t(photoError) : null}>
+            <input name="photo" type="file" accept="image/*" aria-required="true" aria-describedby="photo-hint" onChange={loadPhoto} />
+          </Field>
+          <small id="photo-hint">{t('imageNote')}</small>
+        </div>
+        {form.photo && <Art item={form} />}
+        {categoryField}
         <div className="form-columns">
           <ConditionSelect value={normalizeCondition(form.condition)} onChange={value => set('condition', value)} t={t}
             error={submitted && !conditions.includes(normalizeCondition(form.condition)) ? t('conditionRequired') : null} />
           <DefectsField value={form.defects} onChange={value => set('defects', value)} t={t}
             error={submitted && form.condition === 'hasDefects' && !form.defects.trim() ? t('defectsRequired') : null} />
         </div>
-        {form.mode === 'sell' && <Field label={t('price')} error={submitted && !validPrice(form.price) ? t('priceError') : null}><input name="price" type="number" min="0.01" max="999999.99" step="0.01" inputMode="decimal" value={form.price ?? ''} onChange={event => set('price', event.target.value)} required /></Field>}
-        <fieldset className="pickup stack">
-          <legend>{t('pickupOptional')}</legend>
-          <div className="form-columns">
-            {[['later', 'pickupLater'], ['slots', 'pickupSet']].map(([mode, label]) => <label className="radio-tile" key={mode}>
-              <input type="radio" name="pickup" value={mode} checked={form.formMode === mode} onChange={() => setForm(current => ({
-                ...current, formMode: mode, pickup_slots: current.pickup_slots.length ? current.pickup_slots : [emptySlot()],
-              }))} />{t(label)}
-            </label>)}
-          </div>
-          {form.formMode === 'slots' && <div className="stack" ref={dates}>
-            {form.pickup_slots.map((slot, index) => {
-              const timeError = submitted && slotError(slot) && t(slotError(slot));
-              return <fieldset className="time-slot stack" key={index}>
-                <legend>{t('pickupSlot', { number: index + 1 })}</legend>
-                <Field label={t('date')}><input type="date" min={campusDate()} value={slot.date} onChange={event => setSlot(index, 'date', event.target.value)} /></Field>
-                <div className="form-columns">
-                  <Field label={t('pickupStart')}><input type="time" value={slot.start} onChange={event => setSlot(index, 'start', event.target.value)} /></Field>
-                  <Field label={t('pickupEnd')}><input type="time" value={slot.end} aria-invalid={!!timeError} aria-describedby={timeError ? `slot-error-${index}` : undefined} onChange={event => setSlot(index, 'end', event.target.value)} /></Field>
-                </div>
-                {timeError && <p id={`slot-error-${index}`} role="alert" className="field-error">{timeError}</p>}
-                {form.pickup_slots.length > 1 && <Button kind="quiet" onClick={() => set('pickup_slots', form.pickup_slots.filter((_, position) => position !== index))}>{t('pickupRemove')}</Button>}
-              </fieldset>;
-            })}
-            <Button kind="secondary" disabled={form.pickup_slots.length === 12} onClick={() => set('pickup_slots', [...form.pickup_slots, emptySlot()])}>{t('pickupAdd')}</Button>
-            {form.pickup_slots.length === 12 && <small>{t('slotsLimit')}</small>}
-          </div>}
-          <details open={form.pickup_note ? true : undefined}>
-            <summary>{t('pickupAddNote')}</summary>
-            <Field label={t('pickupNote')}><input maxLength={300} value={form.pickup_note} onChange={event => set('pickup_note', event.target.value)} /></Field>
-            <small>{t('pickupNoteHint')}</small>
-          </details>
-        </fieldset>
-        <Field label={t('photo')} error={photoError ? t('imageNote') : null}>
-          <input type="file" accept="image/jpeg,image/png,image/webp" onChange={loadPhoto} />
-        </Field>
-        {!photoError && <small>{t('imageNote')}</small>}
-        {form.photo && <Art item={form} />}
-      </>}
+        <PickupAreaField value={form.pickup_area ?? ''} onChange={value => set('pickup_area', value)} t={t}
+          error={submitted && (!pickupArea || pickupArea.length > 100) ? t('pickupAreaRequired') : null} />
+      </section>}
+    </section>
+    {offer && <section className="surface stack" aria-labelledby="optional-details">
+      <h2 id="optional-details" className="small-heading">{t('optionalDetails')}</h2>
+      {titleField}{descriptionField}{transferField}
+      <fieldset className="pickup stack">
+        <legend>{t('pickupOptional')}</legend>
+        <div className="form-columns">
+          {[['later', 'pickupLater'], ['slots', 'pickupSet']].map(([mode, label]) => <label className="radio-tile" key={mode}>
+            <input type="radio" name="pickup" value={mode} checked={form.formMode === mode} onChange={() => setForm(current => ({
+              ...current, formMode: mode, pickup_slots: current.pickup_slots.length ? current.pickup_slots : [emptySlot()],
+            }))} />{t(label)}
+          </label>)}
+        </div>
+        {form.formMode === 'slots' && <div className="stack" ref={dates}>
+          {form.pickup_slots.map((slot, index) => {
+            const timeError = submitted && slotError(slot) && t(slotError(slot));
+            return <fieldset className="time-slot stack" key={index}>
+              <legend>{t('pickupSlot', { number: index + 1 })}</legend>
+              <Field label={t('date')}><input type="date" min={campusDate()} value={slot.date} onChange={event => setSlot(index, 'date', event.target.value)} /></Field>
+              <div className="form-columns">
+                <Field label={t('pickupStart')}><input type="time" value={slot.start} onChange={event => setSlot(index, 'start', event.target.value)} /></Field>
+                <Field label={t('pickupEnd')}><input type="time" value={slot.end} aria-invalid={!!timeError} aria-describedby={timeError ? `slot-error-${index}` : undefined} onChange={event => setSlot(index, 'end', event.target.value)} /></Field>
+              </div>
+              {timeError && <p id={`slot-error-${index}`} role="alert" className="field-error">{timeError}</p>}
+              {form.pickup_slots.length > 1 && <Button kind="quiet" onClick={() => set('pickup_slots', form.pickup_slots.filter((_, position) => position !== index))}>{t('pickupRemove')}</Button>}
+            </fieldset>;
+          })}
+          <Button kind="secondary" disabled={form.pickup_slots.length === 12} onClick={() => set('pickup_slots', [...form.pickup_slots, emptySlot()])}>{t('pickupAdd')}</Button>
+          {form.pickup_slots.length === 12 && <small>{t('slotsLimit')}</small>}
+        </div>}
+        <details open={form.pickup_note ? true : undefined}>
+          <summary>{t('pickupAddNote')}</summary>
+          <Field label={t('pickupNote')}><input maxLength={300} value={form.pickup_note} onChange={event => set('pickup_note', event.target.value)} /></Field>
+          <small>{t('pickupNoteHint')}</small>
+        </details>
+      </fieldset>
+    </section>}
+    <section className="surface stack">
       <AudiencePicker value={form.audience} onChange={value => set('audience', value)} college={college}
         onCollegeChange={onCollegeChange} collegeError={submitted && form.audience === 'college' && !college ? t('collegeRequired') : null} t={t} />
     </section>

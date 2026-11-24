@@ -54,8 +54,13 @@ test('the local demo saves posts in the browser and simulates the other student'
 
   // Someone wants your offer: accept the simulated proposal, leave the item, and the other student confirms receipt.
   const offer = listingPayload({ ...emptyListing(), title: 'Desk fan', description: 'Works well', condition: 'working',
-    pickup_slots: [{ date: '2099-01-02', start: '18:00', end: '19:00' }] });
+    photo: 'data:image/jpeg;base64,AAAA', pickup_area: ' Library lobby ', pickup_slots: [{ date: '2099-01-02', start: '18:00', end: '19:00' }] });
   const offerId = await repository.saveListing(null, offer);
+  // R-U1: the pickup area is saved with the offer and remembered for the next one; choosing a college keeps it.
+  assert.equal((await repository.read()).listings.find(row => row.id === offerId).pickup_area, 'Library lobby');
+  await repository.setCollege('cytc');
+  assert.deepEqual((await repository.read()).profile, { college: 'cytc', pickup_area: 'Library lobby' });
+  assert.equal(listingPayload({ ...emptyListing(), kind: 'request', pickup_area: 'library' }).pickup_area, '');
   const interest = await repository.simulateInterest(offerId);
   for (const action of ['accept', 'place', 'receive']) await repository.changeHandover(interest, action);
   data = await repository.read();

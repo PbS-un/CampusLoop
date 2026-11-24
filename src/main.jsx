@@ -116,12 +116,16 @@ function App() {
   }
 
   function startForm(item) {
-    setForm({ ...emptyListing(), ...(item ?? { categories: [] }), formMode: item?.pickup_slots?.length ? 'slots' : 'later' });
+    // A new offer starts with the pickup area used last time (Report 3, R-U1).
+    setForm({ ...emptyListing(), ...(item ?? { categories: [], pickup_area: data.profile?.pickup_area ?? '' }), formMode: item?.pickup_slots?.length ? 'slots' : 'later' });
     go('post', undefined, item?.id ? page : undefined);
   }
   function startPlan(item, previous = page) {
     const suggested = item.pickup_slots.find(slot => slot.date >= campusDate());
-    setPlan({ pickup_date: suggested?.date ?? campusDate(), pickup_time: suggested?.start ?? '', place: '', preset: '' });
+    // The meeting place starts as the owner's pickup area; the recipient can change it.
+    const area = item.pickup_area ?? '';
+    setPlan({ pickup_date: suggested?.date ?? campusDate(), pickup_time: suggested?.start ?? '',
+      place: places.includes(area) ? '' : area, preset: places.includes(area) ? area : '' });
     setPlaceInvalid(false);
     go('plan', item.id, previous);
   }
