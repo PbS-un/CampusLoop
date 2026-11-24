@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { emptyListing, filterListings, handoverPlaceLabel, listingPayload, seedListings, slotEnded, validSlot } from '../src/model.js';
+import { emptyListing, filterListings, handoverPlaceLabel, listingPayload, reminderFor, seedListings, slotEnded, validSlot } from '../src/model.js';
 import { connectRepository } from '../src/repository.js';
 
 test('discovery combines a search, category, transfer mode, and visibility', () => {
@@ -28,6 +28,24 @@ test('discovery combines a search, category, transfer mode, and visibility', () 
   assert.equal(slotEnded({ date: '2026-11-23', start: '11:00', end: '13:00' }, noonInMacau), false);
   assert.equal(handoverPlaceLabel('library', () => '圖書館正門'), '圖書館正門');
   assert.equal(handoverPlaceLabel('Library, west lobby', () => 'Unrelated label'), 'Library, west lobby');
+});
+
+test('in-page reminders follow the handover status without changing it', () => {
+  const now = new Date('2026-11-24T12:00:00+08:00');
+  const base = { owner_id: 'owner', recipient_id: 'recipient', pickup_date: '2026-11-25', pickup_time: '10:00', status: 'confirmed' };
+  const kind = (handover, user) => reminderFor(handover, user, now)?.kind ?? null;
+  assert.equal(kind(base, 'owner'), 'soon');
+  assert.equal(kind(base, 'recipient'), 'soon');
+  assert.equal(kind({ ...base, pickup_date: '2026-11-26' }, 'owner'), null);
+  assert.equal(kind({ ...base, pickup_date: '2026-11-24', pickup_time: '11:00:00' }, 'owner'), 'dueOwner');
+  assert.equal(kind({ ...base, pickup_date: '2026-11-24', pickup_time: '11:00' }, 'recipient'), 'dueRecipient');
+  assert.equal(kind({ ...base, status: 'awaiting' }, 'recipient'), 'receipt');
+  assert.equal(kind({ ...base, status: 'awaiting' }, 'owner'), 'followUp');
+  for (const status of ['proposed', 'cancelled', 'completed']) assert.equal(kind({ ...base, status }, 'owner'), null);
+  assert.equal(kind(base, 'someone-else'), null);
+  const handover = { ...base };
+  reminderFor(handover, 'owner', now);
+  assert.deepEqual(handover, base);
 });
 
 test('the local demo saves posts in the browser and simulates the other student', async () => {

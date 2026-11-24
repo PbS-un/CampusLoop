@@ -64,6 +64,24 @@ export function allowedActions(handover, userId) {
   return [];
 }
 
+// In-page reminders (Report 3, R-F3 and R-E1). They are derived from the handover and never change its status;
+// cancelled or completed handovers produce none, so cancelling ends the reminders for that arrangement.
+export const reminderWindowHours = 24;
+export function reminderFor(handover, userId, now = new Date()) {
+  if (!handover || ![handover.owner_id, handover.recipient_id].includes(userId)) return null;
+  const isOwner = handover.owner_id === userId;
+  if (handover.status === 'confirmed') {
+    const start = new Date(`${handover.pickup_date}T${String(handover.pickup_time).slice(0, 5)}:00+08:00`);
+    if (!Number.isFinite(+start)) return null;
+    const hoursLeft = (start - now) / 36e5;
+    if (hoursLeft <= 0) return { kind: isOwner ? 'dueOwner' : 'dueRecipient' };
+    if (hoursLeft <= reminderWindowHours) return { kind: 'soon' };
+    return null;
+  }
+  if (handover.status === 'awaiting') return { kind: isOwner ? 'followUp' : 'receipt' };
+  return null;
+}
+
 export const possessionFor = handover => handover?.placed ? 'retrieved' : 'has';
 
 export function listingPayload(form) {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { LANGS, translator } from './locales.js';
-import { activeStatuses, allowedActions, campusDate, conditions, slotEnded, emptyListing, filterListings, handoverPlaceLabel, listingPayload, places, possessionFor } from './model.js';
+import { activeStatuses, allowedActions, campusDate, conditions, slotEnded, emptyListing, filterListings, handoverPlaceLabel, listingPayload, places, possessionFor, reminderFor } from './model.js';
 import { connectRepository } from './repository.js';
 import { Art, Button, CategoryPicker, CollegeSelect, ConditionFacts, ConditionSelect, DateLabel, DefectsField, Field, Heading, ListingCard, ListingDetails, ListingForm, Status } from './listings.jsx';
 import './style.css';
@@ -68,6 +68,9 @@ function App() {
     try { localStorage.setItem('campus-loop-language', lang); } catch { /* Language still works in this session. */ }
   }, [lang]);
   useEffect(() => { main.current?.focus({ preventScroll: true }); }, [page]);
+  // Re-check reminder times every minute so they appear and change without a reload.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => { const timer = setInterval(() => setNow(new Date()), 60_000); return () => clearInterval(timer); }, []);
 
   function go(name, id, previous) {
     setPage({ name, id, previous });
@@ -148,6 +151,11 @@ function App() {
   const owned = item?.owner_id === userId;
   const viewerCollege = data.profile?.college ?? '';
   const matching = filterListings(data.listings, filters, userId, viewerCollege);
+  const reminders = data.handovers.map(row => ({ handover: row, reminder: reminderFor(row, userId, now) })).filter(row => row.reminder);
+  function reminderText({ handover, reminder }) {
+    const when = `${new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${handover.pickup_date}T12:00:00Z`))} ${String(handover.pickup_time).slice(0, 5)}`;
+    return t(`reminder_${reminder.kind}`, { item: handover.item_title, when, place: handoverPlaceLabel(handover.place, t) });
+  }
   const saveCollege = value => change(() => repository.setCollege(value), null, 'collegeSaved');
   // Demo handovers run in place and are saved; the other usability scenarios open the separate handover test page.
   const canPractise = !!repository && (!repository.scenario || repository.scenario === 'handover');
@@ -387,6 +395,13 @@ function App() {
         {repository.resetRelisting && <Button kind="secondary" disabled={saving} onClick={() =>
           change(() => repository.resetRelisting(), null, 'relistingDemoReset')}>{t('resetRelistingDemo')}</Button>}
       </div>
+        {reminders.length > 0 && <section className="notice stack" aria-labelledby="reminders-title">
+          <h2 id="reminders-title" className="small-heading">{t('remindersTitle', { count: reminders.length })}</h2>
+          {reminders.map(row => <button className="conversation reminder" type="button" key={row.handover.id} onClick={() => go('handover', row.handover.id, page)}>
+            <span className="conversation-main"><strong>{row.handover.item_title}</strong><span className="conversation-meta">{reminderText(row)}</span></span>
+          </button>)}
+          <small>{t('remindersNote')}</small>
+        </section>}
         <div className="switcher inbox-tabs" role="group" aria-label={t('inboxSections')}>
           <button type="button" aria-pressed={inboxTab === 'handovers'} onClick={() => setInboxTab('handovers')}>
             {t('inboxHandoversTab', { count: data.handovers.length })}</button>
@@ -430,6 +445,8 @@ function App() {
         const canRelist = transfer.status === 'cancelled' && transfer.owner_id === userId && latestForItem?.id === transfer.id
           && data.listings.some(row => row.id === transfer.listing_id && row.owner_id === userId && row.status === 'closed');
         return <><Heading note={t('viewingAs', { role: t(transfer.owner_id === userId ? 'owner' : 'recipient') })}>{transfer.item_title}</Heading>
+          {reminderFor(transfer, userId, now) && <p className="notice" role="note">
+            <strong>{t('reminderLabel')}</strong> {reminderText({ handover: transfer, reminder: reminderFor(transfer, userId, now) })}</p>}
           <div className="surface stack"><div className="badges"><Status value={transfer.status} t={t} />
             {transfer.simulated && <span className="badge sample">{t('simulatedData')}</span>}</div>
             <p><DateLabel value={transfer.pickup_date} locale={locale} /> · {transfer.pickup_time.slice(0, 5)} · {handoverPlaceLabel(transfer.place, t)}</p>
@@ -518,7 +535,9 @@ function App() {
     </main>
     {repository && <nav className="bottom-nav" aria-label={t('discover')}>
       {[['discover', 'discover'], ['post', 'post'], ['inbox', 'inboxNav'], ['my', 'listingMine']].map(([name, label]) => <button type="button" key={name}
-        aria-current={activeTab === name ? 'page' : undefined} disabled={saving} onClick={() => name === 'post' ? startForm() : go(name)}>{t(label)}</button>)}
+        aria-current={activeTab === name ? 'page' : undefined} disabled={saving} onClick={() => name === 'post' ? startForm() : go(name)}>{t(label)}
+        {name === 'inbox' && reminders.length > 0 && <span className="nav-count"><span aria-hidden="true">{reminders.length}</span>
+          <span className="visually-hidden">{t('remindersCount', { count: reminders.length })}</span></span>}</button>)}
     </nav>}
   </div>;
 }
