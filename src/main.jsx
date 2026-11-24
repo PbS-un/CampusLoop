@@ -37,6 +37,7 @@ function App() {
   const [deleteId, setDeleteId] = useState(null);
   const [withdrawId, setWithdrawId] = useState(null);
   const [inboxTab, setInboxTab] = useState('handovers');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const main = useRef(null);
   const lock = useRef(false);
 
@@ -117,7 +118,9 @@ function App() {
 
   function startForm(item) {
     // A new offer starts with the pickup area used last time (Report 3, R-U1).
-    setForm({ ...emptyListing(), ...(item ?? { categories: [], pickup_area: data.profile?.pickup_area ?? '' }), formMode: item?.pickup_slots?.length ? 'slots' : 'later' });
+    // R-P1: a new post has no audience until the author picks one; a residential-college audience is suggested when known.
+    const fresh = { categories: [], pickup_area: data.profile?.pickup_area ?? '', audience: data.profile?.college ? 'college' : '' };
+    setForm({ ...emptyListing(), ...(item ?? fresh), formMode: item?.pickup_slots?.length ? 'slots' : 'later' });
     go('post', undefined, item?.id ? page : undefined);
   }
   function startPlan(item, previous = page) {
@@ -152,6 +155,7 @@ function App() {
   const owned = item?.owner_id === userId;
   const viewerCollege = data.profile?.college ?? '';
   const matching = filterListings(data.listings, filters, userId, viewerCollege);
+  const activeFilterCount = filters.categories.length + (filters.mode ? 1 : 0);
   const saveCollege = value => change(() => repository.setCollege(value), null, 'collegeSaved');
   // Demo handovers run in place and are saved; the other usability scenarios open the separate handover test page.
   const canPractise = !!repository && (!repository.scenario || repository.scenario === 'handover');
@@ -259,13 +263,22 @@ function App() {
           </div>
           <Field label={t('searchLabel')}><input type="search" placeholder={t('search')} value={filters.query}
             onChange={event => setFilters(old => ({ ...old, query: event.target.value }))} /></Field>
-          <CategoryPicker label={t('category')} selected={filters.categories} t={t}
-            onChange={selected => setFilters(old => ({ ...old, categories: selected }))} />
-          <Field label={t('transferType')}><select value={filters.mode} onChange={event => setFilters(old => ({ ...old, mode: event.target.value }))}>
-            <option value="">{t('any')}</option><option value="free">{t('free')}</option>
-            <option value="sell">{t(filters.kind === 'offer' ? 'forSale' : 'paidRequest')}</option>
-          </select></Field>
-          {(filters.categories.length > 0 || filters.mode) && <Button kind="quiet" onClick={() =>
+          {/* On phones the filters fold away so the first results are visible without scrolling; wider screens always show them. */}
+          <button type="button" className="filters-toggle" aria-expanded={filtersOpen} aria-controls="discover-filters"
+            onClick={() => setFiltersOpen(open => !open)}>
+            <span>{t('filters')}</span>
+            {activeFilterCount > 0 && <span className="badge">{t('activeFilters', { count: activeFilterCount })}</span>}
+            <span className="filters-chevron" aria-hidden="true" />
+          </button>
+          <div id="discover-filters" className={`filters-panel stack${filtersOpen ? ' open' : ''}`}>
+            <CategoryPicker label={t('category')} selected={filters.categories} t={t}
+              onChange={selected => setFilters(old => ({ ...old, categories: selected }))} />
+            <Field label={t('transferType')}><select value={filters.mode} onChange={event => setFilters(old => ({ ...old, mode: event.target.value }))}>
+              <option value="">{t('any')}</option><option value="free">{t('free')}</option>
+              <option value="sell">{t(filters.kind === 'offer' ? 'forSale' : 'paidRequest')}</option>
+            </select></Field>
+          </div>
+          {activeFilterCount > 0 && <Button kind="quiet" onClick={() =>
             setFilters(old => ({ ...old, categories: [], mode: '' }))}>{t('clearFilters')}</Button>}
         </section>
         <div className="section-row"><h2>{t(filters.kind === 'offer' ? 'results' : 'matchingRequests')}</h2><output aria-live="polite">{matching.length}</output></div>
