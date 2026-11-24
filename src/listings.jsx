@@ -51,8 +51,8 @@ export function CollegeSelect({ value, onChange, t, error, disabled }) {
 const audienceCopy = { campus: ['campusAudience', 'campusAudienceText'], college: ['collegeAudience', 'collegeAudienceText'],
   private: ['privateAudience', 'privateAudienceText'] };
 
-function AudiencePicker({ value, onChange, college, onCollegeChange, collegeError, t }) {
-  return <fieldset className="audience-picker stack">
+function AudiencePicker({ value, onChange, college, onCollegeChange, collegeError, error, t }) {
+  return <fieldset className="audience-picker stack" aria-describedby={error ? 'audience-error' : undefined}>
     <legend>{t('audienceTitle')}</legend>
     <p className="muted">{t('audienceSub')}</p>
     <div className="audience-options">
@@ -61,11 +61,13 @@ function AudiencePicker({ value, onChange, college, onCollegeChange, collegeErro
         return <label className="audience-option" key={audience}>
           <input type="radio" name="audience" value={audience} checked={value === audience} onChange={() => onChange(audience)}
             aria-labelledby={`audience-${audience}`} aria-describedby={`audience-${audience}-text`} />
-          <span className="audience-copy"><strong id={`audience-${audience}`}>{t(title)}</strong>
+          <span className="audience-copy"><strong id={`audience-${audience}`}>{t(title)}{audience === 'college' && college
+            && <span className="badge suggested">{t('audienceSuggested')}</span>}</strong>
             <small id={`audience-${audience}-text`}>{t(text)}</small></span>
         </label>;
       })}
     </div>
+    {error && <p className="field-error" role="alert" id="audience-error">{error}</p>}
     {value === 'college' && <CollegeSelect value={college} onChange={onCollegeChange} t={t} error={collegeError} />}
   </fieldset>;
 }
@@ -222,6 +224,7 @@ export function ListingForm({ form, setForm, t, onReview, college = '', onColleg
       if (!form.description.trim()) return 'description';
       if (!selectedCategories.length) return 'category';
     }
+    if (!audiences.includes(form.audience)) return 'audience';
     if (form.audience === 'college' && !college) return 'college';
     return null;
   }
@@ -335,7 +338,8 @@ export function ListingForm({ form, setForm, t, onReview, college = '', onColleg
     </section>}
     <section className="surface stack">
       <AudiencePicker value={form.audience} onChange={value => set('audience', value)} college={college}
-        onCollegeChange={onCollegeChange} collegeError={submitted && form.audience === 'college' && !college ? t('collegeRequired') : null} t={t} />
+        onCollegeChange={onCollegeChange} collegeError={submitted && form.audience === 'college' && !college ? t('collegeRequired') : null}
+        error={submitted && !audiences.includes(form.audience) ? t('audienceRequired') : null} t={t} />
     </section>
     <Button type="submit" disabled={readingPhoto}>{t('reviewTitleWeb')}</Button>
   </form>;
