@@ -71,7 +71,7 @@ Object.assign(COPY,{
 });
 const langIndex={en:0,tc:1,sc:2,pt:3};
 Object.assign(COPY, {
-  appTitle: ['Campus Loop', 'Campus Loop', 'Campus Loop', 'Campus Loop'],
+  appTitle: ['ReHome', 'ReHome', 'ReHome', 'ReHome'],
   appIntro: ['Find a new home for useful things at UM.', '為有用的物品在澳大找個新主人。', '为有用的物品在澳大找个新主人。', 'Encontre um novo dono para artigos úteis na UM.'],
   localMode: ['Local demo · Saved in this browser', '本機示範 · 資料儲存於此瀏覽器', '本地演示 · 数据保存在此浏览器', 'Demonstração local · Guardado neste navegador'],
   scenarioMode: ['Usability test · Simulated data', '可用性測試 · 模擬資料', '可用性测试 · 模拟数据', 'Teste de usabilidade · Dados simulados'],
@@ -191,7 +191,7 @@ Object.assign(COPY, {
   selfDisplay: ['Me', '我', '我', 'Eu'],
   slotsLimit: ['Up to 12 pickup times.', '最多可新增 12 個時段。', '最多可添加 12 个时段。', 'Até 12 horários de entrega.'],
   badSlot: ['Enter a valid date, start time, and end time.', '請輸入有效日期、開始及結束時間。', '请输入有效日期、开始和结束时间。', 'Introduza uma data e horas de início e de fim válidas.'],
-  loadError: ['Could not load Campus Loop. Check the connection and try again.', '暫時無法載入 Campus Loop。請檢查連線後重試。', '暂时无法加载 Campus Loop。请检查连接后重试。', 'Não foi possível carregar o Campus Loop. Verifique a ligação e tente novamente.'],
+  loadError: ['Could not load ReHome. Check the connection and try again.', '暫時無法載入 ReHome。請檢查連線後重試。', '暂时无法加载 ReHome。请检查连接后重试。', 'Não foi possível carregar o ReHome. Verifique a ligação e tente novamente.'],
   actionError: ['Could not save this change. Refresh and try again.', '修改未能儲存。請重新整理後重試。', '修改未能保存。请刷新后重试。', 'Não foi possível guardar a alteração. Atualize e tente novamente.'],
   notAvailableNow: ['This listing is currently unavailable.', '此刊登目前無法使用。', '此发布目前无法使用。', 'Este anúncio está indisponível.'],
   activeHandover: ['This item already has a pending handover.', '此物品已有待處理的交接。', '此物品已有待处理的交接。', 'Este artigo já tem uma entrega pendente.'],

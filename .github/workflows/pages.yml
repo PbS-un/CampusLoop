@@ -1,4 +1,4 @@
-name: Deploy Campus Loop
+name: Deploy ReHome
 
 on:
   push:

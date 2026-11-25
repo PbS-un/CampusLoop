@@ -1,6 +1,6 @@
-# Campus Loop
+# ReHome
 
-Campus Loop is a University of Macau student exchange app built with React and Vite. It has no server: all posts, replies and handovers are saved in the visitor's own browser, and the other students are simulated. Its interface is available in English, Traditional Chinese, Simplified Chinese, and European Portuguese. The sample listings and messages are fictional.
+ReHome is a University of Macau student exchange app built with React and Vite. It has no server: all posts, replies and handovers are saved in the visitor's own browser, and the other students are simulated. Its interface is available in English, Traditional Chinese, Simplified Chinese, and European Portuguese. The sample listings and messages are fictional.
 
 ## Run locally
 
@@ -17,14 +17,14 @@ Open the URL printed by Vite. The app starts with sample data and saves your cha
 
 1. Create a GitHub repository named `CampusLoop`, or use your existing repository. Upload the **contents** of this folder to the root of its `main` branch, including `.github/workflows/pages.yml` and `package-lock.json`. Keep `node_modules` and `dist` out of the repository.
 2. Open **Settings → Pages** and choose **GitHub Actions** under **Build and deployment → Source**.
-3. Go to **Actions → Deploy Campus Loop → Run workflow**, then open the link in the deployment result after it succeeds. For a repository named `CampusLoop`, the project site normally uses `https://<owner>.github.io/CampusLoop/`.
+3. Go to **Actions → Deploy ReHome → Run workflow**, then open the link in the deployment result after it succeeds. For a repository named `CampusLoop`, the project site normally uses `https://<owner>.github.io/CampusLoop/`.
 
 If you are pushing a new local repository from the command line, replace `<owner>` with your GitHub username or organization:
 
 ```sh
 git init -b main
 git add .
-git commit -m "Build Campus Loop web app"
+git commit -m "Build ReHome web app"
 git remote add origin https://github.com/<owner>/CampusLoop.git
 git push -u origin main
 ```

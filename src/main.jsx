@@ -544,7 +544,7 @@ function App() {
   const mode = repository && { local: 'localMode', scenario: 'scenarioMode' }[repository.source];
   return <div className="app-shell">
     <header className="topbar">
-      <div className="brand-block"><span className="brand-mark" aria-hidden="true">↻</span><span className="brand">Campus Loop</span></div>
+      <div className="brand-block"><span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11 12 4l9 7"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5h4v5"/></svg></span><span className="brand">ReHome</span></div>
       <label className="language">
         <span className="language-globe" aria-hidden="true" />
         <span className="language-text">
