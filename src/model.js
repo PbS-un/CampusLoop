@@ -44,10 +44,11 @@ export const slotEnded = (slot, now = new Date()) => new Date(`${slot.date}T${sl
 const normalize = text => text.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().trim().replace(/\s+/g, ' ');
 export const categoriesFor = listing => listing.categories ?? [listing.category];
 
+// Your own posts are hidden, except the sample Introduction to Algorithms, which appears among the offers once relisted.
 export function filterListings(rows, { kind, categories: selected = [], mode, query }, viewerId, viewerCollege = '') {
   const terms = normalize(query).split(' ').filter(Boolean);
   return rows.filter(row => {
-    if ((viewerId && row.owner_id === viewerId) || row.kind !== kind || row.status !== 'available' || !reachable(row, viewerCollege)
+    if ((viewerId && row.owner_id === viewerId && row.id !== sampleId) || row.kind !== kind || row.status !== 'available' || !reachable(row, viewerCollege)
         || (selected.length && !categoriesFor(row).some(category => selected.includes(category)))
         || (mode && row.mode !== mode)) return false;
     const haystack = normalize([row.title, row.description, row.display_name, row.search_terms].filter(Boolean).join(' '));

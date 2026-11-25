@@ -50,7 +50,7 @@ function withRelistingSample(repository) {
       const data = await repository.read();
       if (sampleDeleted) return data;
       const { listing, handover, message } = structuredClone(sample);
-      return { ...data, listings: [...data.listings, listing], handovers: [handover, ...data.handovers],
+      return { ...data, listings: [listing, ...data.listings], handovers: [handover, ...data.handovers],
         messages: [...data.messages, message] };
     },
     async relist(id, possession) {
@@ -95,7 +95,7 @@ function demoRepository(scenario, startItemId, relistingPractice = false) {
     ? createRelistingSample(guest, scenario === 'retrieval') : null;
   if (recoverySample) {
     const { listing, handover, message } = recoverySample;
-    data.listings.push(listing);
+    data.listings.unshift(listing);
     data.handovers.unshift(handover);
     data.messages.push(message);
   }
@@ -107,7 +107,7 @@ function demoRepository(scenario, startItemId, relistingPractice = false) {
         const { listing, handover, message } = recoverySample;
         listing.status = 'closed';
         if (!data.listings.includes(listing)) {
-          data.listings.push(listing);
+          data.listings.unshift(listing);
           data.handovers.unshift(handover);
           data.messages.push(message);
         }

@@ -311,7 +311,7 @@ function App() {
             setFilters(old => ({ ...old, categories: [], mode: '' }))}>{t('clearFilters')}</Button>}
         </section>
         <div className="section-row"><h2>{t(filters.kind === 'offer' ? 'results' : 'matchingRequests')}</h2><output aria-live="polite">{matching.length}</output></div>
-        {matching.length ? <div className="results">{matching.map(row => <ListingCard key={row.id} item={row} t={t} onOpen={() => go('detail', row.id, page)} />)}</div>
+        {matching.length ? <div className="results">{matching.map(row => <ListingCard key={row.id} item={row} t={t} owner={row.owner_id === userId} onOpen={() => go('detail', row.id, page)} />)}</div>
           : <div className="surface stack"><h2>{t(filters.kind === 'offer' ? 'emptyTitle' : 'requestNoMatch')}</h2><p>{t('emptyText')}</p>
             <Button kind="secondary" onClick={() => setFilters(old => ({ ...initialFilters, kind: old.kind }))}>{t('browseAll')}</Button></div>}
       </>;

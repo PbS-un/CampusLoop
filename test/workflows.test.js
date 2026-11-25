@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { emptyListing, filterListings, handoverPlaceLabel, listingPayload, missingDetails, seedListings, slotEnded, validSlot } from '../src/model.js';
+import { emptyListing, filterListings, handoverPlaceLabel, listingPayload, missingDetails, sampleListing, seedListings, slotEnded, validSlot } from '../src/model.js';
 import { connectRepository } from '../src/repository.js';
 
 test('discovery combines a search, category, transfer mode, and visibility', () => {
@@ -121,4 +121,11 @@ test('missing details block confirmation, and keeping an item is separate from a
   data = await repository.read();
   assert.equal(data.listings.find(row => row.id === lampId).status, 'available');
   assert.equal(filterListings(data.listings, { kind: 'offer', categories: [], mode: '', query: 'Lamp' }, 'someone-else').some(row => row.id === lampId), true);
+});
+
+test('the sample Introduction to Algorithms appears among the offers only once relisted', () => {
+  const offers = { kind: 'offer', categories: [], mode: '', query: 'algorithms' };
+  const book = sampleListing('student-a');
+  assert.equal(filterListings([book], offers, 'student-a').length, 0);
+  assert.equal(filterListings([{ ...book, status: 'available' }], offers, 'student-a').length, 1);
 });
