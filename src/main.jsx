@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { LANGS, translator } from './locales.js';
-import { activeStatuses, allowedActions, campusDate, conditions, slotEnded, emptyListing, filterListings, handoverPlaceLabel, listingPayload, missingDetails, places, possessionFor } from './model.js';
+import { activeStatuses, allowedActions, campusDate, conditions, slotEnded, emptyListing, filterListings, handoverPlaceLabel, listingPayload, missingDetails, places, possessionFor, sampleId } from './model.js';
 import { connectRepository } from './repository.js';
 import { Art, Button, CategoryPicker, CollegeSelect, ConditionFacts, ConditionSelect, DateLabel, DefectsField, Field, Heading, ListingCard, ListingDetails, ListingForm, Status } from './listings.jsx';
 import './style.css';
@@ -217,7 +217,7 @@ function App() {
   }
 
   function postDemoControls(row) {
-    if (!repository || repository.scenario || row.owner_id !== userId || row.simulated || row.status !== 'available'
+    if (!repository || repository.scenario || row.owner_id !== userId || (row.simulated && row.id !== sampleId) || row.status !== 'available'
       || data.handovers.some(h => h.listing_id === row.id && activeStatuses.includes(h.status))) return null;
     if (row.audience === 'private') return <p className="muted">{t('privateNoDemo')}</p>;
     const isOffer = row.kind === 'offer';
@@ -536,7 +536,7 @@ function App() {
         <div className="button-row">
           {latest && <Button onClick={() => go('handover', latest.id, page)}>{t('previousHandover')}</Button>}
           <Button kind="secondary" onClick={() => go('my')}>{t('listingMine')}</Button>
-        </div></>;
+        </div>{postDemoControls(item)}</>;
       default: return null;
     }
   }

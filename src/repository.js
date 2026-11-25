@@ -35,43 +35,6 @@ function reopenListing(listing, handover, possession) {
 
 const sampleDeletedKey = 'campus-loop-sample-deleted';
 
-function withRelistingSample(repository) {
-  const sample = createRelistingSample(repository.userId, true);
-  let sampleDeleted = false;
-  try { sampleDeleted = localStorage.getItem(sampleDeletedKey) === '1'; } catch { /* Browser storage is optional. */ }
-  function setSampleDeleted(value) {
-    sampleDeleted = value;
-    try { if (value) localStorage.setItem(sampleDeletedKey, '1'); else localStorage.removeItem(sampleDeletedKey); }
-    catch { /* The sample stays hidden for this session. */ }
-  }
-  return {
-    ...repository,
-    async read() {
-      const data = await repository.read();
-      if (sampleDeleted) return data;
-      const { listing, handover, message } = structuredClone(sample);
-      return { ...data, listings: [listing, ...data.listings], handovers: [handover, ...data.handovers],
-        messages: [...data.messages, message] };
-    },
-    async relist(id, possession) {
-      if (id === sampleId) {
-        if (sampleDeleted) throw new Error('listing_unavailable');
-        reopenListing(sample.listing, sample.handover, possession);
-      } else await repository.relist(id, possession);
-    },
-    async deleteListing(id) {
-      if (id !== sampleId) return repository.deleteListing(id);
-      if (sampleDeleted) throw new Error('listing_unavailable');
-      setSampleDeleted(true);
-    },
-    async resetRelisting() {
-      sample.listing.status = 'closed';
-      setSampleDeleted(false);
-      await repository.resetDemoActivity?.();
-    },
-  };
-}
-
 function demoRepository(scenario, startItemId, relistingPractice = false) {
   let data = { listings: structuredClone(seedListings), handovers: [], messages: [], replies: [], profile: { college: '', pickup_area: '' } };
   if (!scenario) {
@@ -91,6 +54,30 @@ function demoRepository(scenario, startItemId, relistingPractice = false) {
     try { localStorage.setItem(storageKey, JSON.stringify(data)); } catch { /* Without storage, changes last until reload. */ }
   }
 
+  // Normal mode: the sample Introduction to Algorithms is saved with your own posts, so once relisted it can be
+  // handed over like them. Deleting it only hides it in this browser; Reset demo brings it back.
+  let sampleDeleted = false;
+  try { sampleDeleted = localStorage.getItem(sampleDeletedKey) === '1'; } catch { /* Browser storage is optional. */ }
+  function setSampleDeleted(value) {
+    sampleDeleted = value;
+    try { if (value) localStorage.setItem(sampleDeletedKey, '1'); else localStorage.removeItem(sampleDeletedKey); }
+    catch { /* The sample stays hidden for this session. */ }
+  }
+  function restoreSample() {
+    const ids = new Set(data.handovers.filter(row => row.listing_id === sampleId).map(row => row.id));
+    data.listings = data.listings.filter(row => row.id !== sampleId);
+    data.handovers = data.handovers.filter(row => !ids.has(row.id));
+    data.messages = data.messages.filter(row => !ids.has(row.handover_id));
+    const { listing, handover, message } = createRelistingSample(guest, true);
+    data.listings.unshift(listing);
+    data.handovers.unshift(handover);
+    data.messages.push(message);
+  }
+  if (!scenario && !sampleDeleted && !data.listings.some(row => row.id === sampleId)) {
+    restoreSample();
+    persist();
+  }
+
   const recoverySample = ['recovery', 'retrieval'].includes(scenario)
     ? createRelistingSample(guest, scenario === 'retrieval') : null;
   if (recoverySample) {
@@ -102,6 +89,14 @@ function demoRepository(scenario, startItemId, relistingPractice = false) {
 
   return {
     source: scenario ? 'scenario' : 'local', userId: guest, scenario, startItemId,
+    ...(!scenario && {
+      async resetRelisting() {
+        setSampleDeleted(false);
+        await this.resetDemoActivity();
+        restoreSample();
+        persist();
+      },
+    }),
     ...(relistingPractice && {
       async resetRelisting() {
         const { listing, handover, message } = recoverySample;
@@ -113,7 +108,12 @@ function demoRepository(scenario, startItemId, relistingPractice = false) {
         }
       },
     }),
-    async read() { return structuredClone(data); },
+    // The sample book stays first in My listings.
+    async read() {
+      const copy = structuredClone(data);
+      copy.listings.sort((a, b) => (b.id === sampleId) - (a.id === sampleId));
+      return copy;
+    },
     async setCollege(college) {
       if (college && !colleges.includes(college)) throw new Error('invalid_college');
       data.profile = { ...data.profile, college: college || '' };
@@ -226,6 +226,7 @@ function demoRepository(scenario, startItemId, relistingPractice = false) {
       data.handovers = data.handovers.filter(row => !handoverIds.has(row.id));
       data.messages = data.messages.filter(row => !handoverIds.has(row.handover_id));
       data.replies = data.replies.filter(row => row.request_id !== id);
+      if (id === sampleId && !scenario) setSampleDeleted(true);
       persist();
     },
     async propose(id, plan) {
@@ -313,5 +314,5 @@ export async function connectRepository() {
     return demoRepository(test, startItemId, relistingPractice);
   }
   // All data is kept in this browser; there is no server.
-  return withRelistingSample(demoRepository(null));
+  return demoRepository(null);
 }

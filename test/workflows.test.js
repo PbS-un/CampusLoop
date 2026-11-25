@@ -129,3 +129,34 @@ test('the sample Introduction to Algorithms appears among the offers only once r
   assert.equal(filterListings([book], offers, 'student-a').length, 0);
   assert.equal(filterListings([{ ...book, status: 'available' }], offers, 'student-a').length, 1);
 });
+
+test('after relisting, the sample book can be handed over to a simulated student, and Reset demo restores it', async () => {
+  const store = new Map();
+  globalThis.localStorage = {
+    getItem: key => store.get(key) ?? null, setItem: (key, value) => store.set(key, String(value)), removeItem: key => store.delete(key),
+  };
+  globalThis.location = { search: '' };
+  const repository = await connectRepository();
+  const bookId = sampleListing('').id;
+  let data = await repository.read();
+  assert.equal(data.listings[0].id, bookId);
+  assert.equal(data.listings[0].status, 'closed');
+
+  await repository.relist(bookId, 'retrieved');
+  // The relisted book is saved, so a reload keeps it available.
+  assert.equal((await (await connectRepository()).read()).listings.find(row => row.id === bookId).status, 'available');
+  const interest = await repository.simulateInterest(bookId);
+  for (const action of ['accept', 'place', 'receive']) await repository.changeHandover(interest, action);
+  assert.equal((await repository.read()).listings.find(row => row.id === bookId).status, 'completed');
+
+  await repository.resetRelisting();
+  data = await repository.read();
+  assert.equal(data.listings.find(row => row.id === bookId).status, 'closed');
+  assert.deepEqual(data.handovers.filter(row => row.listing_id === bookId).map(row => row.id), ['sample-handover']);
+
+  // Deleting the book hides it after a reload, until Reset demo.
+  await repository.deleteListing(bookId);
+  assert.equal((await (await connectRepository()).read()).listings.some(row => row.id === bookId), false);
+  await repository.resetRelisting();
+  assert.equal((await (await connectRepository()).read()).listings.some(row => row.id === bookId), true);
+});
