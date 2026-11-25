@@ -1,4 +1,4 @@
-import { activeStatuses, allowedActions, campusDate, colleges, normalizeCondition, possessionFor, slotEnded, reachable, sampleId, sampleListing, seedListings, testModes } from './model.js';
+import { activeStatuses, allowedActions, campusDate, colleges, missingDetails, normalizeCondition, possessionFor, slotEnded, reachable, sampleId, sampleListing, seedListings, testModes } from './model.js';
 
 const storageKey = 'campus-loop-web-v1';
 const guest = 'local-guest';
@@ -199,7 +199,8 @@ function demoRepository(scenario, startItemId, relistingPractice = false) {
     },
     async saveListing(id, payload) {
       const item = id && data.listings.find(row => row.id === id && row.owner_id === guest);
-      if (id && (!item || item.status !== 'available' || data.handovers.some(row => row.listing_id === id && activeStatuses.includes(row.status)))) {
+      // R-F2: details can still be completed while a proposal waits for the owner; only confirmed handovers lock the post.
+      if (id && (!item || item.status !== 'available' || data.handovers.some(row => row.listing_id === id && ['confirmed', 'awaiting'].includes(row.status)))) {
         throw new Error('listing_locked');
       }
       // Like the database, a college-only post always uses the poster's own college.
@@ -233,6 +234,7 @@ function demoRepository(scenario, startItemId, relistingPractice = false) {
       if (!practiceAllowed || !item?.simulated || item.owner_id === guest || item.kind !== 'offer' || item.status !== 'available') {
         throw new Error('listing_unavailable');
       }
+      if (missingDetails(item).length) throw new Error('details_missing');
       const transfer = {
         id: crypto.randomUUID(), listing_id: id, item_title: item.title, owner_id: demoOwner, recipient_id: guest,
         ...plan, status: 'confirmed', placed: false, simulated: true, created_at: new Date().toISOString(),
@@ -262,12 +264,28 @@ function demoRepository(scenario, startItemId, relistingPractice = false) {
         && transfer.owner_id === guest && transfer.status === 'awaiting';
       if (!simulatesOwner && !simulatesRequester && !allowedActions(transfer, guest).includes(action)) throw new Error('invalid_transition');
       const item = data.listings.find(row => row.id === transfer.listing_id);
+      if (action === 'accept' && missingDetails(item).length) throw new Error('details_missing');
       // Cancelling a reply handover puts the sample request back on the board instead of closing it.
       if (action === 'cancel' && transfer.status !== 'proposed') item.status = transfer.reply_id ? 'available' : 'closed';
       if (action === 'accept') item.status = 'reserved';
       if (action === 'place') transfer.placed = true;
       if (action === 'receive') item.status = 'completed';
       transfer.status = { accept: 'confirmed', hand: 'awaiting', place: 'awaiting', receive: 'completed', cancel: 'cancelled' }[action];
+      persist();
+    },
+    // N5: keeping an item is the owner's choice and is recorded as 'kept', apart from a cancelled handover ('closed').
+    async keepListing(id) {
+      const item = data.listings.find(row => row.id === id && row.owner_id === guest && row.kind === 'offer');
+      if (!item || item.status !== 'available') throw new Error('listing_unavailable');
+      if (data.handovers.some(row => row.listing_id === id && activeStatuses.includes(row.status))) throw new Error('listing_locked');
+      item.status = 'kept';
+      persist();
+    },
+    async offerAgain(id) {
+      const item = data.listings.find(row => row.id === id && row.owner_id === guest);
+      if (item?.status !== 'kept') throw new Error('listing_unavailable');
+      item.status = 'available';
+      item.pickup_slots = (item.pickup_slots ?? []).filter(slot => !slotEnded(slot));
       persist();
     },
     async relist(id, possession) {

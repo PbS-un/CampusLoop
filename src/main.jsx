@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { LANGS, translator } from './locales.js';
-import { activeStatuses, allowedActions, campusDate, conditions, slotEnded, emptyListing, filterListings, handoverPlaceLabel, listingPayload, places, possessionFor } from './model.js';
+import { activeStatuses, allowedActions, campusDate, conditions, slotEnded, emptyListing, filterListings, handoverPlaceLabel, listingPayload, missingDetails, places, possessionFor } from './model.js';
 import { connectRepository } from './repository.js';
 import { Art, Button, CategoryPicker, CollegeSelect, ConditionFacts, ConditionSelect, DateLabel, DefectsField, Field, Heading, ListingCard, ListingDetails, ListingForm, Status } from './listings.jsx';
 import './style.css';
@@ -11,7 +11,7 @@ const initialFilters = { kind: 'offer', categories: [], mode: '', query: '' };
 const actionText = { accept: 'actionAccept', hand: 'actionHand', place: 'actionPlace', receive: 'actionReceive', cancel: 'cancelHandover' };
 const backendErrors = { listing_unavailable: 'notAvailableNow',
   past_date: 'futureTime', active_handover: 'activeHandover', listing_locked: 'activeHandover',
-  request_unavailable: 'requestUnavailable', reply_in_handover: 'replyInHandover', college_required: 'collegeRequired' };
+  request_unavailable: 'requestUnavailable', reply_in_handover: 'replyInHandover', college_required: 'collegeRequired', details_missing: 'detailsMissingError' };
 
 function App() {
   const [lang, setLanguage] = useState(() => {
@@ -36,6 +36,7 @@ function App() {
   const [replyItem, setReplyItem] = useState({ condition: '', defects: '', submitted: false });
   const [deleteId, setDeleteId] = useState(null);
   const [withdrawId, setWithdrawId] = useState(null);
+  const [keepId, setKeepId] = useState(null);
   const [inboxTab, setInboxTab] = useState('handovers');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const main = useRef(null);
@@ -79,6 +80,7 @@ function App() {
     setReceiveOpen(false);
     if (name === 'reply') setReplyItem({ condition: '', defects: '', submitted: false });
     setDeleteId(null);
+    setKeepId(null);
     setWithdrawId(null);
     setError('');
     setNotice('');
@@ -116,11 +118,11 @@ function App() {
     finally { lock.current = false; setSaving(false); }
   }
 
-  function startForm(item) {
+  function startForm(item, returnHandover) {
     // A new offer starts with the pickup area used last time (Report 3, R-U1).
     // R-P1: a new post has no audience until the author picks one; a residential-college audience is suggested when known.
     const fresh = { categories: [], pickup_area: data.profile?.pickup_area ?? '', audience: data.profile?.college ? 'college' : '' };
-    setForm({ ...emptyListing(), ...(item ?? fresh), formMode: item?.pickup_slots?.length ? 'slots' : 'later' });
+    setForm({ ...emptyListing(), ...(item ?? fresh), formMode: item?.pickup_slots?.length ? 'slots' : 'later', returnHandover });
     go('post', undefined, item?.id ? page : undefined);
   }
   function startPlan(item, previous = page) {
@@ -185,6 +187,33 @@ function App() {
           () => { setDeleteId(null); afterDelete?.(); }, 'listingDeleted')}>{t('confirmDelete')}</Button>
       </div>
     </div>;
+  }
+
+  // N5: the owner can keep an item for now; it is hidden from others and can be offered again later.
+  function keepControls(row) {
+    if (row.owner_id !== userId || row.simulated || row.kind !== 'offer') return null;
+    if (row.status === 'kept') return <div className="notice stack"><p>{t('keptNote')}</p>
+      <Button disabled={saving} onClick={() => change(() => repository.offerAgain(row.id), null, 'offeredAgain')}>{t('offerAgain')}</Button></div>;
+    if (data.handovers.some(h => h.listing_id === row.id && activeStatuses.includes(h.status))) return <div className="stack">
+      <Button kind="secondary" disabled>{t('keepItem')}</Button><p className="muted">{t('keepLocked')}</p></div>;
+    if (row.status !== 'available') return null;
+    if (keepId !== row.id) return <Button kind="secondary" disabled={saving} onClick={() => { setKeepId(row.id); setDeleteId(null); setNotice(''); }}>{t('keepItem')}</Button>;
+    const questionId = `keep-ask-${row.id}`;
+    return <div className="notice stack" role="group" aria-labelledby={questionId}>
+      <strong id={questionId}>{t('keepItemAsk', { title: row.title })}</strong><p>{t('keepItemText')}</p>
+      <div className="button-row">
+        <Button kind="secondary" autoFocus disabled={saving} onClick={() => setKeepId(null)}>{t('keepCancel')}</Button>
+        <Button disabled={saving} onClick={() => change(() => repository.keepListing(row.id), () => setKeepId(null), 'itemKept')}>{t('confirmKeep')}</Button>
+      </div>
+    </div>;
+  }
+
+  // R-F2: list the details still needed before a handover can be confirmed.
+  function missingNotice(row, own) {
+    const missing = missingDetails(row);
+    if (!missing.length) return null;
+    return <div className="notice stack" role="note"><strong>{t(own ? 'detailsMissingTitle' : 'detailsMissingOther')}</strong>
+      <ul className="missing-list">{missing.map(key => <li key={key}>{t(key)}</li>)}</ul></div>;
   }
 
   function postDemoControls(row) {
@@ -303,15 +332,15 @@ function App() {
         return <><Heading note={owned ? t('selfDisplay') : item.display_name}>{item.title}</Heading><div className="surface stack">
           <Art item={item} hero /><div className="badges"><Status value={item.status} t={t} />{item.simulated && <span className="badge sample">{t('simulatedData')}</span>}</div>
           <ListingDetails item={item} t={t} locale={locale} />
-        </div><div className="button-row">
-          {owned && item.status === 'available' && !activeStatuses.includes(latest?.status) && !item.simulated && <Button onClick={() => startForm(item)}>{t('editListing')}</Button>}
+        </div>{owned && item.status === 'available' && missingNotice(item, true)}<div className="button-row">
+          {owned && item.status === 'available' && !['confirmed', 'awaiting'].includes(latest?.status) && !item.simulated && <Button onClick={() => startForm(item)}>{t('editListing')}</Button>}
           {latest && <Button kind="secondary" onClick={() => go('handover', latest.id, page)}>{t(latest.status === 'cancelled'
             ? (item.status === 'closed' ? 'viewCancelledHandover' : 'previousHandover') : 'viewPlan')}</Button>}
           {!owned && item.kind === 'request' && <Button onClick={() => go('reply', item.id, page)}>{t('offerToRequest')}</Button>}
           {!owned && item.simulated && item.kind === 'offer' && !latest && item.status === 'available' && (canPractise
             ? <Button onClick={() => startPlan(item)}>{t('tryDemoHandover')}</Button>
             : <a className="button button-link" href={`?test=handover&item=${encodeURIComponent(item.id)}`}>{t('tryDemoHandover')}</a>)}
-        </div>{owned && postDemoControls(item)}{owned && deleteControls(item, () => go('my'))}</>;
+        </div>{owned && postDemoControls(item)}{owned && keepControls(item)}{owned && deleteControls(item, () => go('my'))}</>;
       case 'post': return <ListingForm form={form} setForm={setForm} t={t} college={viewerCollege} onCollegeChange={saveCollege} onReview={draft => { setForm(draft); go('review', undefined, page); }} />;
       case 'reply': {
         if (!item || owned || item.kind !== 'request' || item.status !== 'available') return <div className="surface">{t('requestUnavailable')}</div>;
@@ -386,13 +415,14 @@ function App() {
         return <><Heading>{t('reviewTitleWeb')}</Heading><div className="surface stack"><h2>{payload.title}</h2>
           <ListingDetails item={preview} t={t} locale={locale} />
         </div><div className="button-row"><Button disabled={saving} onClick={() => change(() => repository.saveListing(form.id ?? null, payload),
-          id => go('detail', id, { name: 'my' }), 'publishedMessage')}>{t(form.id ? 'editSaved' : 'publish')}</Button>
+          id => form.returnHandover ? go('handover', form.returnHandover, { name: 'inbox' }) : go('detail', id, { name: 'my' }), 'publishedMessage')}>{t(form.id ? 'editSaved' : 'publish')}</Button>
           <Button kind="secondary" disabled={saving} onClick={() => go('post', undefined, page.previous?.previous)}>{t('editDetails')}</Button></div></>;
       }
       case 'plan': return <><Heading note={item?.title}>{t('planHandover')}</Heading>
         {canPractise && item?.simulated && <p className="muted">{t('handoverPracticeNote')}</p>}
+        {item && missingNotice(item, false)}
         {planForm(values => change(() => repository.propose(page.id, values), id => go('handover', id, { name: 'inbox' }),
-          canPractise && item?.simulated ? 'demoAccepted' : 'proposedSaved'), !item, 'propose')}</>;
+          canPractise && item?.simulated ? 'demoAccepted' : 'proposedSaved'), !item || missingDetails(item).length > 0, 'propose')}</>;
       case 'replyPlan':
         if (!reply || reply.status !== 'accepted' || !repository.arrangeReply) return <div className="surface">{t('requestUnavailable')}</div>;
         return <><Heading note={`${reply.item_title} · ${reply.request_title}`}>{t('arrangeReplyHandover')}</Heading>
@@ -443,6 +473,9 @@ function App() {
         const termsSource = transfer.reply_id ? data.replies.find(row => row.id === transfer.reply_id)
           : data.listings.find(row => row.id === transfer.listing_id);
         const termsPrice = termsSource && (termsSource.mode === 'free' ? t('free') : t('namedPrice', { price: termsSource.price }));
+        const listingSource = !transfer.reply_id && termsSource;
+        const missing = transfer.status === 'proposed' && listingSource ? missingDetails(listingSource) : [];
+        const editable = missing.length > 0 && listingSource.owner_id === userId && listingSource.status === 'available' && !listingSource.simulated;
         const latestForItem = data.handovers.find(row => row.listing_id === transfer.listing_id);
         const canRelist = transfer.status === 'cancelled' && transfer.owner_id === userId && latestForItem?.id === transfer.id
           && data.listings.some(row => row.id === transfer.listing_id && row.owner_id === userId && row.status === 'closed');
@@ -451,9 +484,12 @@ function App() {
             {transfer.simulated && <span className="badge sample">{t('simulatedData')}</span>}</div>
             <p><DateLabel value={transfer.pickup_date} locale={locale} /> · {transfer.pickup_time.slice(0, 5)} · {handoverPlaceLabel(transfer.place, t)}</p>
             {termsSource && <section className="stack" aria-labelledby="handover-terms"><h2 id="handover-terms" className="small-heading">{t('handoverTerms')}</h2>
-              <dl className="facts"><div><dt>{t('transferType')}</dt><dd>{termsPrice}</dd></div>
+              <dl className="facts"><div><dt>{t('description')}</dt><dd>{termsSource.description || t('descriptionNone')}</dd></div>
+                <div><dt>{t('transferType')}</dt><dd>{termsPrice}</dd></div>
                 {termsSource.condition && <ConditionFacts item={termsSource} t={t} />}</dl></section>}
-            <div className="button-row">{actions.map(action => <Button key={action} disabled={saving}
+            {missing.length > 0 && <>{missingNotice(listingSource, transfer.owner_id === userId)}
+              {editable && <Button kind="secondary" disabled={saving} onClick={() => startForm(listingSource, transfer.id)}>{t('addMissingDetails')}</Button>}</>}
+            <div className="button-row">{actions.map(action => <Button key={action} disabled={saving || (action === 'accept' && missing.length > 0)}
               kind={action === 'cancel' ? 'secondary' : 'primary'} onClick={() => {
                 if (action === 'cancel') { setCancelOpen(true); setReceiveOpen(false); }
                 // Confirming receipt completes the transfer and cannot be undone, so ask first (not for the simulated other person).

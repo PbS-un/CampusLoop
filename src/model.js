@@ -64,6 +64,18 @@ export function allowedActions(handover, userId) {
   return [];
 }
 
+// R-F2: details that may be added after publishing but must be present before a handover is confirmed.
+export function missingDetails(item) {
+  if (!item || item.kind !== 'offer') return [];
+  const condition = normalizeCondition(item.condition);
+  const missing = [];
+  if (!item.description?.trim()) missing.push('description');
+  if (!conditions.includes(condition)) missing.push('condition');
+  if (condition === 'hasDefects' && !item.defects?.trim()) missing.push('defects');
+  if (item.mode === 'sell' && !(Number(item.price) > 0)) missing.push('price');
+  return missing;
+}
+
 export const possessionFor = handover => handover?.placed ? 'retrieved' : 'has';
 
 export function listingPayload(form) {

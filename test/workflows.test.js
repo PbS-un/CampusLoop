@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { emptyListing, filterListings, handoverPlaceLabel, listingPayload, seedListings, slotEnded, validSlot } from '../src/model.js';
+import { emptyListing, filterListings, handoverPlaceLabel, listingPayload, missingDetails, seedListings, slotEnded, validSlot } from '../src/model.js';
 import { connectRepository } from '../src/repository.js';
 
 test('discovery combines a search, category, transfer mode, and visibility', () => {
@@ -77,4 +77,48 @@ test('the local demo saves posts in the browser and simulates the other student'
   assert.equal(data.replies.length, 0);
   assert.equal(data.handovers.filter(row => row.id !== 'sample-handover').length, 0);
   assert.deepEqual(data.listings.filter(row => row.owner_id === repository.userId && !row.simulated).map(row => row.status), ['available', 'available']);
+});
+
+test('missing details block confirmation, and keeping an item is separate from a cancelled handover', async () => {
+  const store = new Map();
+  globalThis.localStorage = {
+    getItem: key => store.get(key) ?? null, setItem: (key, value) => store.set(key, String(value)), removeItem: key => store.delete(key),
+  };
+  globalThis.location = { search: '' };
+  const repository = await connectRepository();
+  const draft = { ...emptyListing(), title: 'Desk fan', condition: 'working', photo: 'data:image/jpeg;base64,AAAA', pickup_area: 'library' };
+
+  // R-F2: an offer without a description can be published and receive a proposal, but cannot be confirmed yet.
+  assert.deepEqual(missingDetails(listingPayload(draft)), ['description']);
+  assert.deepEqual(missingDetails(listingPayload({ ...draft, description: 'x', condition: 'hasDefects', mode: 'sell', price: '' })), ['defects', 'price']);
+  assert.deepEqual(missingDetails(seedListings.find(item => item.kind === 'request')), []);
+  const offerId = await repository.saveListing(null, listingPayload(draft));
+  const proposal = await repository.simulateInterest(offerId);
+  await assert.rejects(repository.changeHandover(proposal, 'accept'), { message: 'details_missing' });
+  // The owner completes the details while the proposal waits, then confirms.
+  await repository.saveListing(offerId, listingPayload({ ...draft, description: 'Quiet, three speeds' }));
+  await repository.changeHandover(proposal, 'accept');
+  let data = await repository.read();
+  assert.equal(data.handovers.find(row => row.id === proposal).status, 'confirmed');
+  await assert.rejects(repository.saveListing(offerId, listingPayload({ ...draft, description: 'Changed' })), { message: 'listing_locked' });
+  // A cancelled handover closes the post: an unsuccessful attempt, not a decision to keep.
+  await repository.changeHandover(proposal, 'cancel');
+  assert.equal((await repository.read()).listings.find(row => row.id === offerId).status, 'closed');
+  await assert.rejects(repository.keepListing(offerId), { message: 'listing_unavailable' });
+
+  // N5: the owner keeps an available item; it is hidden from others until offered again.
+  const lampId = await repository.saveListing(null, listingPayload({ ...draft, title: 'Lamp', description: 'Warm light' }));
+  const waiting = await repository.simulateInterest(lampId);
+  await assert.rejects(repository.keepListing(lampId), { message: 'listing_locked' });
+  await repository.changeHandover(waiting, 'cancel');
+  await repository.keepListing(lampId);
+  data = await repository.read();
+  const lamp = data.listings.find(row => row.id === lampId);
+  assert.equal(lamp.status, 'kept');
+  assert.equal(filterListings(data.listings, { kind: 'offer', categories: [], mode: '', query: 'Lamp' }, 'someone-else').some(row => row.id === lampId), false);
+  await assert.rejects(repository.simulateInterest(lampId), { message: 'listing_unavailable' });
+  await repository.offerAgain(lampId);
+  data = await repository.read();
+  assert.equal(data.listings.find(row => row.id === lampId).status, 'available');
+  assert.equal(filterListings(data.listings, { kind: 'offer', categories: [], mode: '', query: 'Lamp' }, 'someone-else').some(row => row.id === lampId), true);
 });

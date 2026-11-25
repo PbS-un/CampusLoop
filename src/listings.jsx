@@ -249,9 +249,12 @@ export function ListingForm({ form, setForm, t, onReview, college = '', onColleg
     </Field>
     {offer && <small id="title-hint">{t('titleFallbackHint')}</small>}
   </div>;
-  const descriptionField = <Field label={t(offer ? 'descriptionOptional' : 'description')} error={!offer && submitted && !form.description.trim() ? t('required') : null}>
-    <textarea name="description" maxLength={1500} value={form.description} onChange={event => set('description', event.target.value)} />
-  </Field>;
+  const descriptionField = <div className="field-with-hint">
+    <Field label={t(offer ? 'descriptionOptional' : 'description')} error={!offer && submitted && !form.description.trim() ? t('required') : null}>
+      <textarea name="description" maxLength={1500} value={form.description} onChange={event => set('description', event.target.value)} aria-describedby={offer ? 'description-hint' : undefined} />
+    </Field>
+    {offer && <small id="description-hint">{t('descriptionLaterHint')}</small>}
+  </div>;
   const categoryField = <CategoryPicker label={t('categoryMultiple')} selected={selectedCategories} t={t} onChange={value => set('categories', value)}
     error={submitted && !selectedCategories.length ? t('categoryRequired') : null} />;
   const transferField = <>
